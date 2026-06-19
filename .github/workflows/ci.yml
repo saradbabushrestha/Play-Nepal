@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: playnepal
+          POSTGRES_PASSWORD: playnepal
+          POSTGRES_DB: playnepal
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U playnepal"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://playnepal:playnepal@localhost:5433/playnepal?schema=public
+      JWT_ACCESS_SECRET: ci-access-secret-not-for-production-use
+      JWT_REFRESH_SECRET: ci-refresh-secret-not-for-production-use
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+      - name: Build shared package
+        run: npm run build:shared
+      - name: Typecheck (all workspaces)
+        run: npm run typecheck
+      - name: Apply migrations
+        run: npm run prisma:deploy --workspace=@play-nepal/server
+      - name: Build server + web
+        run: npm run build

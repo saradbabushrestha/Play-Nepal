@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: playnepal
+      POSTGRES_PASSWORD: playnepal
+      POSTGRES_DB: playnepal
+    ports:
+      - '5435:5432'
+    volumes:
+      - pn_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U playnepal']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - pn_redisdata:/data
+
+  # The app services below are for a full containerised run (prod-like).
+  # For local dev, use `npm run db:up` (postgres+redis only) and run the
+  # server/web with `npm run dev`.
+  server:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      SERVER_PORT: 4000
+      DATABASE_URL: postgresql://playnepal:playnepal@postgres:5432/playnepal?schema=public
+      REDIS_URL: redis://redis:6379
+      WEB_ORIGIN: http://localhost:8080
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me-please}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me-please}
+    ports:
+      - '4000:4000'
+
+  web:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: ''
+        VITE_SOCKET_URL: ''
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - '8080:80'
+
+volumes:
+  pn_pgdata:
+  pn_redisdata:
